@@ -1879,6 +1879,314 @@
             ]
           }
         ]
+      },
+      {
+        "language": "ko",
+        "tabs": [
+          {
+            "tab": "시작하기",
+            "groups": [
+              {
+                "group": "홈",
+                "pages": ["docs_kr/index"]
+              },
+              {
+                "group": "개요",
+                "pages": ["docs_kr/start/showcase"]
+              },
+              {
+                "group": "핵심 개념",
+                "pages": ["docs_kr/concepts/features"]
+              },
+              {
+                "group": "첫걸음",
+                "pages": [
+                  "docs_kr/start/getting-started",
+                  "docs_kr/start/onboarding-overview",
+                  "docs_kr/start/wizard",
+                  "docs_kr/start/onboarding"
+                ]
+              },
+              {
+                "group": "사용 가이드",
+                "pages": ["docs_kr/start/openclaw"]
+              }
+            ]
+          },
+          {
+            "tab": "설치",
+            "groups": [
+              {
+                "group": "설치 개요",
+                "pages": ["docs_kr/install/index", "docs_kr/install/installer"]
+              },
+              {
+                "group": "기타 설치 방법",
+                "pages": [
+                  "docs_kr/install/docker",
+                  "docs_kr/install/podman",
+                  "docs_kr/install/nix",
+                  "docs_kr/install/ansible",
+                  "docs_kr/install/bun"
+                ]
+              },
+              {
+                "group": "유지보수",
+                "pages": ["docs_kr/install/updating", "docs_kr/install/migrating", "docs_kr/install/uninstall"]
+              },
+              {
+                "group": "호스팅 및 배포",
+                "pages": [
+                  "docs_kr/install/fly",
+                  "docs_kr/install/hetzner",
+                  "docs_kr/install/gcp",
+                  "docs_kr/install/macos-vm",
+                  "docs_kr/install/exe-dev",
+                  "docs_kr/install/railway",
+                  "docs_kr/install/render",
+                  "docs_kr/install/northflank"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "채널",
+            "groups": [
+              {
+                "group": "개요",
+                "pages": ["docs_kr/channels/index"]
+              },
+              {
+                "group": "메시징 플랫폼",
+                "pages": [
+                  "docs_kr/channels/whatsapp",
+                  "docs_kr/channels/telegram",
+                  "docs_kr/channels/discord",
+                  "docs_kr/channels/slack",
+                  "docs_kr/channels/googlechat",
+                  "docs_kr/channels/mattermost",
+                  "docs_kr/channels/signal",
+                  "docs_kr/channels/imessage",
+                  "docs_kr/channels/bluebubbles",
+                  "docs_kr/channels/msteams",
+                  "docs_kr/channels/matrix",
+                  "docs_kr/channels/line",
+                  "docs_kr/channels/zalo"
+                ]
+              },
+              {
+                "group": "설정 및 가이드",
+                "pages": [
+                  "docs_kr/channels/pairing",
+                  "docs_kr/channels/group-messages",
+                  "docs_kr/channels/groups",
+                  "docs_kr/channels/broadcast-groups",
+                  "docs_kr/channels/channel-routing",
+                  "docs_kr/channels/location",
+                  "docs_kr/channels/troubleshooting"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "에이전트",
+            "groups": [
+              {
+                "group": "기초",
+                "pages": [
+                  "docs_kr/concepts/architecture",
+                  "docs_kr/concepts/agent",
+                  "docs_kr/concepts/agent-loop",
+                  "docs_kr/concepts/system-prompt",
+                  "docs_kr/concepts/context",
+                  "docs_kr/concepts/agent-workspace",
+                  "docs_kr/concepts/oauth"
+                ]
+              },
+              {
+                "group": "세션 및 기억",
+                "pages": [
+                  "docs_kr/concepts/session",
+                  "docs_kr/concepts/sessions",
+                  "docs_kr/concepts/session-pruning",
+                  "docs_kr/concepts/session-tool",
+                  "docs_kr/concepts/memory",
+                  "docs_kr/concepts/compaction"
+                ]
+              },
+              {
+                "group": "멀티 에이전트",
+                "pages": ["docs_kr/concepts/multi-agent", "docs_kr/concepts/presence"]
+              },
+              {
+                "group": "메시지 및 전송",
+                "pages": [
+                  "docs_kr/concepts/messages",
+                  "docs_kr/concepts/streaming",
+                  "docs_kr/concepts/retry",
+                  "docs_kr/concepts/queue"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "도구",
+            "groups": [
+              {
+                "group": "개요",
+                "pages": ["docs_kr/tools/index"]
+              },
+              {
+                "group": "내장 도구",
+                "pages": [
+                  "docs_kr/tools/lobster",
+                  "docs_kr/tools/llm-task",
+                  "docs_kr/tools/exec",
+                  "docs_kr/tools/web",
+                  "docs_kr/tools/apply-patch",
+                  "docs_kr/tools/elevated",
+                  "docs_kr/tools/thinking",
+                  "docs_kr/tools/reactions"
+                ]
+              },
+              {
+                "group": "브라우저",
+                "pages": [
+                  "docs_kr/tools/browser",
+                  "docs_kr/tools/browser-login",
+                  "docs_kr/tools/chrome-extension",
+                  "docs_kr/tools/browser-linux-troubleshooting"
+                ]
+              },
+              {
+                "group": "에이전트 협업",
+                "pages": [
+                  "docs_kr/tools/agent-send",
+                  "docs_kr/tools/subagents",
+                  "docs_kr/tools/multi-agent-sandbox-tools"
+                ]
+              },
+              {
+                "group": "스킬(Skills)",
+                "pages": [
+                  "docs_kr/tools/slash-commands",
+                  "docs_kr/tools/skills",
+                  "docs_kr/tools/skills-config",
+                  "docs_kr/tools/clawhub",
+                  "docs_kr/tools/plugin"
+                ]
+              },
+              {
+                "group": "자동화",
+                "pages": [
+                  "docs_kr/automation/hooks",
+                  "docs_kr/automation/cron-jobs",
+                  "docs_kr/automation/cron-vs-heartbeat",
+                  "docs_kr/automation/troubleshooting",
+                  "docs_kr/automation/webhook",
+                  "docs_kr/automation/gmail-pubsub",
+                  "docs_kr/automation/poll",
+                  "docs_kr/automation/auth-monitoring"
+                ]
+              },
+              {
+                "group": "미디어 및 기기",
+                "pages": [
+                  "docs_kr/nodes/index",
+                  "docs_kr/nodes/troubleshooting",
+                  "docs_kr/nodes/images",
+                  "docs_kr/nodes/audio",
+                  "docs_kr/nodes/camera",
+                  "docs_kr/nodes/talk",
+                  "docs_kr/nodes/voicewake",
+                  "docs_kr/nodes/location-command"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "모델",
+            "groups": [
+              {
+                "group": "개요",
+                "pages": ["docs_kr/providers/index", "docs_kr/providers/models"]
+              },
+              {
+                "group": "모델 개념",
+                "pages": ["docs_kr/concepts/models"]
+              },
+              {
+                "group": "설정",
+                "pages": ["docs_kr/concepts/model-providers", "docs_kr/concepts/model-failover"]
+              },
+              {
+                "group": "제공업체",
+                "pages": [
+                  "docs_kr/providers/anthropic",
+                  "docs_kr/providers/openai",
+                  "docs_kr/providers/openrouter",
+                  "docs_kr/providers/opencode",
+                  "docs_kr/providers/qianfan",
+                  "docs_kr/providers/synthetic",
+                  "docs_kr/providers/zai"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "플랫폼",
+            "groups": [
+              {
+                "group": "플랫폼 개요",
+                "pages": [
+                  "docs_kr/platforms/index",
+                  "docs_kr/platforms/macos",
+                  "docs_kr/platforms/linux",
+                  "docs_kr/platforms/windows",
+                  "docs_kr/platforms/android",
+                  "docs_kr/platforms/ios"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "게이트웨이 및 운영",
+            "groups": [
+              {
+                "group": "게이트웨이",
+                "pages": [
+                  "docs_kr/gateway/index",
+                  {
+                    "group": "설정 및 운영",
+                    "pages": [
+                      "docs_kr/gateway/configuration",
+                      "docs_kr/gateway/configuration-reference",
+                      "docs_kr/gateway/configuration-examples",
+                      "docs_kr/gateway/authentication",
+                      "docs_kr/gateway/trusted-proxy-auth",
+                      "docs_kr/gateway/health",
+                      "docs_kr/gateway/heartbeat",
+                      "docs_kr/gateway/doctor",
+                      "docs_kr/gateway/logging",
+                      "docs_kr/gateway/gateway-lock",
+                      "docs_kr/gateway/background-process",
+                      "docs_kr/gateway/multiple-gateways",
+                      "docs_kr/gateway/troubleshooting"
+                    ]
+                  }
+                ]
+              },
+              {
+                "group": "원격 접속",
+                "pages": ["docs_kr/gateway/remote", "docs_kr/gateway/remote-gateway-readme", "docs_kr/gateway/tailscale"]
+              },
+              {
+                "group": "웹 인터페이스",
+                "pages": ["docs_kr/web/index", "docs_kr/web/control-ui", "docs_kr/web/dashboard", "docs_kr/web/webchat", "docs_kr/web/tui"]
+              }
+            ]
+          }
+        ]
       }
     ]
   }
