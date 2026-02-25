@@ -1971,7 +1971,12 @@
                   "docs_kr/channels/msteams",
                   "docs_kr/channels/matrix",
                   "docs_kr/channels/line",
-                  "docs_kr/channels/zalo"
+                  "docs_kr/channels/zalo",
+                  "docs_kr/channels/zalouser",
+                  "docs_kr/channels/synology-chat",
+                  "docs_kr/channels/nextcloud-talk",
+                  "docs_kr/channels/nostr",
+                  "docs_kr/channels/tlon"
                 ]
               },
               {
@@ -2125,6 +2130,19 @@
                   "docs_kr/providers/anthropic",
                   "docs_kr/providers/openai",
                   "docs_kr/providers/openrouter",
+                  "docs_kr/providers/qwen",
+                  "docs_kr/providers/mistral",
+                  "docs_kr/providers/moonshot",
+                  "docs_kr/providers/minimax",
+                  "docs_kr/providers/kilocode",
+                  "docs_kr/providers/litellm",
+                  "docs_kr/providers/huggingface",
+                  "docs_kr/providers/glm",
+                  "docs_kr/providers/github-copilot",
+                  "docs_kr/providers/deepgram",
+                  "docs_kr/providers/cloudflare-ai-gateway",
+                  "docs_kr/providers/claude-max-api-proxy",
+                  "docs_kr/providers/bedrock",
                   "docs_kr/providers/opencode",
                   "docs_kr/providers/qianfan",
                   "docs_kr/providers/synthetic",
