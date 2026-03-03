@@ -10,7 +10,8 @@
 6. [도구(Tool) 실행 파이프라인](#도구tool-실행-파이프라인)
 7. [세션 및 컨텍스트 관리](#세션-및-컨텍스트-관리)
 8. [에러 처리 및 Failover](#에러-처리-및-failover)
-9. [핵심 파일 참조](#핵심-파일-참조)
+9. [실전 예시: Discord에서 "두바이 비행기표 최저가 알아봐줘"](#실전-예시-discord에서-두바이-비행기표-최저가-알아봐줘)
+10. [핵심 파일 참조](#핵심-파일-참조)
 
 ---
 
@@ -998,6 +999,737 @@ flowchart TD
 | `isLikelyContextOverflowError()` | 컨텍스트 윈도우 초과 |
 | `isTimeoutErrorMessage()` | 응답 타임아웃 |
 | `isFailoverAssistantError()` | 복구 가능한 일반 오류 |
+
+---
+
+## 실전 예시: Discord에서 복합 여행 계획 요청
+
+사용자가 Discord DM에서 아래와 같이 복합적인 요청을 했을 때, 시스템 내부에서 오가는 프롬프트와 메시지를 단계별로 추적한다.
+
+```
+두바이 3박5일 여행 계획 짜줘.
+최저가 항공권이랑 호텔 찾아보고, 현지 날씨도 확인해서
+일정표를 파일로 만들어줘
+```
+
+이 요청은 **6종의 도구**를 **7회 이상** 호출하는 복합 시나리오다:
+
+| 도구 | 용도 | 호출 횟수 |
+|------|------|-----------|
+| `web_search` | 항공권, 호텔, 날씨 검색 | 3회 |
+| `web_fetch` | 검색 결과 상세 페이지 확인 | 2회 |
+| `exec` | 디렉토리 확인 | 1회 |
+| `write` | 일정표 Markdown 파일 생성 | 1회 |
+
+### 전체 시퀀스 (프롬프트 흐름 포함)
+
+```mermaid
+sequenceDiagram
+    actor User as 사용자 (Discord)
+    participant Discord as Discord Gateway
+    participant Process as processDiscordMessage()
+    participant Agent as agentCommand()
+    participant Attempt as runEmbeddedAttempt()
+    participant LLM as Claude API
+    participant WS as web_search
+    participant WF as web_fetch
+    participant Exec as exec
+    participant Write as write
+    participant Chunker as Block Chunker
+    participant Send as sendMessageDiscord()
+
+    User->>Discord: "두바이 3박5일 여행 계획 짜줘..."
+    Discord->>Process: MESSAGE_CREATE
+    Process->>Agent: FinalizedMsgContext
+    Agent->>Attempt: runEmbeddedAttempt()
+
+    rect rgb(240, 248, 255)
+        Note over Attempt,LLM: ── Round 1: 계획 수립 + 항공권 검색 ──
+        Attempt->>LLM: system + [user] 복합 요청 + tools
+        LLM-->>Attempt: text + tool_use(web_search) x2 병렬
+        Note over LLM: "여행 계획을 세우겠습니다. 먼저 항공권과<br/>날씨를 동시에 확인하겠습니다."<br/>+ web_search("서울 두바이 항공권 최저가")<br/>+ web_search("두바이 3월 날씨 여행")
+    end
+
+    par 병렬 도구 실행
+        Attempt->>WS: web_search("서울 두바이 항공권...")
+        WS-->>Attempt: 항공권 검색 결과 5건
+    and
+        Attempt->>WS: web_search("두바이 3월 날씨...")
+        WS-->>Attempt: 날씨 검색 결과 5건
+    end
+
+    rect rgb(240, 248, 255)
+        Note over Attempt,LLM: ── Round 2: 항공권 상세 + 호텔 검색 ──
+        Attempt->>LLM: 이전 대화 + tool_result x2
+        LLM-->>Attempt: tool_use(web_fetch) + tool_use(web_search)
+        Note over LLM: web_fetch("https://kr.trip.com/...")<br/>+ web_search("두바이 호텔 3박 추천 2026")
+    end
+
+    par 병렬 도구 실행
+        Attempt->>WF: web_fetch(항공권 상세)
+        WF-->>Attempt: 항공권 상세 Markdown
+    and
+        Attempt->>WS: web_search("두바이 호텔...")
+        WS-->>Attempt: 호텔 검색 결과 5건
+    end
+
+    rect rgb(240, 248, 255)
+        Note over Attempt,LLM: ── Round 3: 호텔 상세 확인 ──
+        Attempt->>LLM: 이전 대화 + tool_result x2
+        LLM-->>Attempt: tool_use(web_fetch)
+        Note over LLM: web_fetch("https://www.booking.com/...")
+    end
+
+    Attempt->>WF: web_fetch(호텔 상세)
+    WF-->>Attempt: 호텔 상세 Markdown
+
+    rect rgb(240, 248, 255)
+        Note over Attempt,LLM: ── Round 4: 파일 생성 ──
+        Attempt->>LLM: 이전 대화 + tool_result
+        LLM-->>Attempt: tool_use(exec) + tool_use(write)
+        Note over LLM: exec("ls ~/travel-plans")<br/>+ write("dubai-trip.md", 일정표 내용)
+    end
+
+    Attempt->>Exec: exec("ls ~/travel-plans")
+    Exec-->>Attempt: 디렉토리 목록
+    Attempt->>Write: write("~/travel-plans/dubai-2026-03.md")
+    Write-->>Attempt: 파일 생성 완료
+
+    rect rgb(240, 248, 255)
+        Note over Attempt,LLM: ── Round 5: 최종 응답 생성 ──
+        Attempt->>LLM: 이전 대화 + tool_result x2
+        LLM-->>Attempt: 최종 요약 텍스트
+        Note over LLM: stop_reason: "end_turn"
+    end
+
+    Attempt->>Chunker: 최종 응답 스트리밍
+    Chunker->>Send: onBlockReply (청크 x3)
+    Send->>Discord: POST /channels/{id}/messages (x3)
+    Discord-->>User: 최종 응답 수신
+```
+
+### Step 0: Discord 메시지 수신
+
+**Discord Gateway 원본 이벤트:**
+```json
+{
+  "t": "MESSAGE_CREATE",
+  "d": {
+    "id": "1234567890",
+    "channel_id": "9876543210",
+    "author": { "id": "user123", "username": "홍길동" },
+    "content": "두바이 3박5일 여행 계획 짜줘.\n최저가 항공권이랑 호텔 찾아보고, 현지 날씨도 확인해서\n일정표를 파일로 만들어줘",
+    "timestamp": "2026-03-04T10:00:00.000Z",
+    "attachments": []
+  }
+}
+```
+
+**processDiscordMessage()가 생성하는 FinalizedMsgContext:**
+```json
+{
+  "Body": "[2026-03-04 10:00 KST] 홍길동: 두바이 3박5일 여행 계획 짜줘.\n최저가 항공권이랑 호텔 찾아보고, 현지 날씨도 확인해서\n일정표를 파일로 만들어줘",
+  "BodyForAgent": "두바이 3박5일 여행 계획 짜줘.\n최저가 항공권이랑 호텔 찾아보고, 현지 날씨도 확인해서\n일정표를 파일로 만들어줘",
+  "From": "discord:user123",
+  "SessionKey": "discord:default:user123",
+  "Surface": "discord"
+}
+```
+
+### Step 1: 시스템 프롬프트
+
+`buildAgentSystemPrompt()`가 조합하여 LLM에 전달하는 시스템 프롬프트 (핵심 부분만 발췌):
+
+```
+You are a personal assistant running inside OpenClaw.
+
+## Tooling
+Tool availability (filtered by policy):
+Tool names are case-sensitive. Call tools exactly as listed.
+- read: Read file contents
+- write: Create or overwrite files
+- edit: Make precise edits to files
+- exec: Run shell commands (pty available for TTY-required CLIs)
+- process: Manage background exec sessions
+- web_search: Search the web using Brave Search API. Supports region-specific
+  and localized search via country and language parameters.
+- web_fetch: Fetch and extract readable content from a URL
+- browser: Control web browser
+- cron: Manage cron jobs and wake events
+- message: Send messages and channel actions
+- sessions_send: Send a message to another session/sub-agent
+- session_status: Show usage/time/model state
+TOOLS.md does not control tool availability; it is user guidance...
+For long waits, avoid rapid poll loops: use exec with enough yieldMs...
+
+## Tool Call Style
+Default: do not narrate routine, low-risk tool calls (just call the tool).
+Narrate only when it helps: multi-step work, complex/challenging problems...
+
+## Safety
+You have no independent goals...
+
+## Workspace
+Your working directory is: /Users/user/.openclaw/workspace
+
+## Authorized Senders
+Authorized senders: a1b2c3d4e5f6.
+
+# Project Context
+
+## AGENTS.md
+(에이전트 지시사항)
+
+## SOUL.md
+(에이전트 페르소나)
+
+## MEMORY.md
+(누적 메모리)
+
+## Runtime
+Runtime: agent=default | host=macbook | os=darwin (arm64) | node=v22.12.0 |
+model=claude-opus-4-6 | channel=discord | thinking=off
+```
+
+### Step 2: Round 1 — 계획 수립 + 병렬 검색 (항공권 & 날씨)
+
+**Anthropic Messages API 페이로드:**
+```json
+{
+  "model": "claude-opus-4-6",
+  "max_tokens": 16384,
+  "stream": true,
+  "system": "(시스템 프롬프트 전문)",
+  "messages": [
+    {
+      "role": "user",
+      "content": "두바이 3박5일 여행 계획 짜줘.\n최저가 항공권이랑 호텔 찾아보고, 현지 날씨도 확인해서\n일정표를 파일로 만들어줘"
+    }
+  ],
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web using Brave Search API...",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "count": { "type": "number", "minimum": 1, "maximum": 10 },
+          "search_lang": { "type": "string" },
+          "freshness": { "type": "string" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch and extract readable content from a URL",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "extractMode": { "type": "string" },
+          "maxChars": { "type": "number" }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "exec",
+      "description": "Run shell commands...",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" }
+        },
+        "required": ["command"]
+      }
+    },
+    {
+      "name": "write",
+      "description": "Create or overwrite files",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read file contents..."
+    }
+  ]
+}
+```
+
+**LLM 응답 (Round 1) — 텍스트 + 도구 2개 병렬 호출:**
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "두바이 3박 5일 여행 계획을 세워드리겠습니다. 항공권, 호텔, 날씨를 먼저 조사하겠습니다."
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01_flight",
+      "name": "web_search",
+      "input": {
+        "query": "서울 인천 두바이 항공권 최저가 왕복 2026년 3월",
+        "count": 5,
+        "search_lang": "ko"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01_weather",
+      "name": "web_search",
+      "input": {
+        "query": "두바이 3월 날씨 기온 여행 옷차림 2026",
+        "count": 5,
+        "search_lang": "ko"
+      }
+    }
+  ],
+  "stop_reason": "tool_use"
+}
+```
+
+> LLM은 복합 요청을 분석하여 **2개의 web_search를 동시에 호출**.
+> SDK가 이 두 도구를 병렬로 실행한다.
+
+### Step 3: 도구 실행 — web_search x2 (병렬)
+
+**도구 1: 항공권 검색 (`toolu_01_flight`)**
+```
+GET https://api.search.brave.com/res/v1/web/search
+    ?q=서울+인천+두바이+항공권+최저가+왕복+2026년+3월&count=5&search_lang=ko
+```
+
+반환:
+```json
+{
+  "query": "서울 인천 두바이 항공권 최저가 왕복 2026년 3월",
+  "provider": "brave",
+  "count": 5,
+  "tookMs": 780,
+  "externalContent": { "untrusted": true, "source": "web_search", "wrapped": true },
+  "results": [
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]서울-두바이 항공권 - 트립닷컴[/EXTERNAL_CONTENT]",
+      "url": "https://kr.trip.com/flights/seoul-to-dubai/",
+      "description": "[EXTERNAL_CONTENT source=web_search]왕복 최저 ₩385,000 (에티하드, 아부다비 경유)...[/EXTERNAL_CONTENT]"
+    },
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]두바이 항공권 비교 - 스카이스캐너[/EXTERNAL_CONTENT]",
+      "url": "https://www.skyscanner.co.kr/transport/flights/icn/dxb/",
+      "description": "[EXTERNAL_CONTENT source=web_search]에미레이트항공 직항 ₩520,000, 카타르항공 ₩402,000...[/EXTERNAL_CONTENT]"
+    },
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]인천-두바이 저가 항공권 | 네이버[/EXTERNAL_CONTENT]",
+      "url": "https://flight.naver.com/flights/international/ICN-DXB",
+      "description": "[EXTERNAL_CONTENT source=web_search]3월 최저가 ₩430,000...[/EXTERNAL_CONTENT]"
+    }
+  ]
+}
+```
+
+**도구 2: 날씨 검색 (`toolu_01_weather`)**
+```
+GET https://api.search.brave.com/res/v1/web/search
+    ?q=두바이+3월+날씨+기온+여행+옷차림+2026&count=5&search_lang=ko
+```
+
+반환:
+```json
+{
+  "query": "두바이 3월 날씨 기온 여행 옷차림 2026",
+  "provider": "brave",
+  "count": 5,
+  "tookMs": 654,
+  "externalContent": { "untrusted": true, "source": "web_search", "wrapped": true },
+  "results": [
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]두바이 3월 날씨 - 여행 가이드[/EXTERNAL_CONTENT]",
+      "url": "https://www.weather-guide.com/dubai-march",
+      "description": "[EXTERNAL_CONTENT source=web_search]평균 기온 22-32°C, 맑은 날 많음, 자외선 강함, 가벼운 여름옷 + 자외선차단제 필수...[/EXTERNAL_CONTENT]"
+    },
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]두바이 여행 최적 시기 | 트립어드바이저[/EXTERNAL_CONTENT]",
+      "url": "https://www.tripadvisor.co.kr/dubai-best-time",
+      "description": "[EXTERNAL_CONTENT source=web_search]3월은 두바이 여행 성수기, 비 거의 없음, 습도 낮음...[/EXTERNAL_CONTENT]"
+    }
+  ]
+}
+```
+
+### Step 4: Round 2 — 항공권 상세 + 호텔 검색 (병렬)
+
+**Messages API 전달 (누적된 대화):**
+```json
+{
+  "messages": [
+    { "role": "user", "content": "두바이 3박5일 여행 계획 짜줘..." },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "text", "text": "두바이 3박 5일 여행 계획을 세워드리겠습니다..." },
+        { "type": "tool_use", "id": "toolu_01_flight", "name": "web_search", "input": { "query": "서울 인천 두바이 항공권..." } },
+        { "type": "tool_use", "id": "toolu_01_weather", "name": "web_search", "input": { "query": "두바이 3월 날씨..." } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        { "type": "tool_result", "tool_use_id": "toolu_01_flight", "content": "{항공권 검색 결과 JSON}" },
+        { "type": "tool_result", "tool_use_id": "toolu_01_weather", "content": "{날씨 검색 결과 JSON}" }
+      ]
+    }
+  ]
+}
+```
+
+**LLM 응답 (Round 2) — 도구 2개 병렬 호출:**
+```json
+{
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_02_flight_detail",
+      "name": "web_fetch",
+      "input": {
+        "url": "https://kr.trip.com/flights/seoul-to-dubai/",
+        "extractMode": "markdown",
+        "maxChars": 15000
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_02_hotel",
+      "name": "web_search",
+      "input": {
+        "query": "두바이 호텔 3박 추천 가성비 2026년 3월 다운타운 마리나",
+        "count": 5,
+        "search_lang": "ko"
+      }
+    }
+  ],
+  "stop_reason": "tool_use"
+}
+```
+
+> LLM은 최저가 항공권 상세를 확인하면서, 동시에 호텔 검색도 시작.
+
+### Step 5: 도구 실행 — web_fetch + web_search (병렬)
+
+**도구 3: 항공권 상세 (`toolu_02_flight_detail`)**
+
+```
+HTTP GET https://kr.trip.com/flights/seoul-to-dubai/
+```
+→ Readability.js로 HTML→Markdown 변환 → 보안 래핑
+
+반환:
+```json
+{
+  "url": "https://kr.trip.com/flights/seoul-to-dubai/",
+  "status": 200,
+  "extractor": "readability",
+  "text": "[EXTERNAL_CONTENT source=web_fetch]\n# 서울(ICN) → 두바이(DXB)\n\n| 항공사 | 출발 | 도착 | 경유 | 가격 |\n|--------|------|------|------|------|\n| 에티하드항공 | 03/15 22:30 | 03/16 10:45 | 아부다비 1회 | ₩385,000 |\n| 카타르항공 | 03/15 23:55 | 03/16 12:30 | 도하 1회 | ₩402,000 |\n| 에미레이트항공 | 03/15 23:50 | 03/16 05:20 | 직항 | ₩520,000 |\n| 대한항공 | 03/16 00:30 | 03/16 06:10 | 직항 | ₩589,000 |\n[/EXTERNAL_CONTENT]",
+  "tookMs": 1342,
+  "externalContent": { "untrusted": true, "source": "web_fetch", "wrapped": true }
+}
+```
+
+**도구 4: 호텔 검색 (`toolu_02_hotel`)**
+```
+GET https://api.search.brave.com/res/v1/web/search
+    ?q=두바이+호텔+3박+추천+가성비+2026년+3월+다운타운+마리나&count=5&search_lang=ko
+```
+
+반환:
+```json
+{
+  "query": "두바이 호텔 3박 추천 가성비 2026년 3월",
+  "provider": "brave",
+  "count": 5,
+  "tookMs": 712,
+  "results": [
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]두바이 호텔 TOP 10 - Booking.com[/EXTERNAL_CONTENT]",
+      "url": "https://www.booking.com/city/ae/dubai.ko.html",
+      "description": "[EXTERNAL_CONTENT source=web_search]로브 다운타운 1박 ₩89,000, JW 메리어트 마키 ₩145,000...[/EXTERNAL_CONTENT]"
+    },
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]두바이 가성비 호텔 추천 - 트립어드바이저[/EXTERNAL_CONTENT]",
+      "url": "https://www.tripadvisor.co.kr/Hotels-g295424-Dubai-Hotels.html",
+      "description": "[EXTERNAL_CONTENT source=web_search]알바샤 빕 호텔 1박 ₩55,000, 힐튼 가든인 ₩78,000...[/EXTERNAL_CONTENT]"
+    },
+    {
+      "title": "[EXTERNAL_CONTENT source=web_search]2026 두바이 숙소 총정리 - 마이리얼트립[/EXTERNAL_CONTENT]",
+      "url": "https://www.myrealtrip.com/offers/dubai-hotels",
+      "description": "[EXTERNAL_CONTENT source=web_search]다운타운 지역 평균 1박 ₩100,000~₩150,000, 마리나 지역 ₩70,000~₩120,000...[/EXTERNAL_CONTENT]"
+    }
+  ]
+}
+```
+
+### Step 6: Round 3 — 호텔 상세 확인
+
+**Messages API 전달 (누적 5개 메시지):**
+```json
+{
+  "messages": [
+    { "role": "user", "content": "두바이 3박5일 여행 계획 짜줘..." },
+    { "role": "assistant", "content": [text + tool_use x2] },
+    { "role": "user", "content": [tool_result x2 (항공권+날씨 검색)] },
+    { "role": "assistant", "content": [tool_use x2 (항공권상세+호텔검색)] },
+    { "role": "user", "content": [tool_result x2 (항공권상세+호텔검색)] }
+  ]
+}
+```
+
+**LLM 응답 (Round 3):**
+```json
+{
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_03_hotel_detail",
+      "name": "web_fetch",
+      "input": {
+        "url": "https://www.booking.com/city/ae/dubai.ko.html",
+        "extractMode": "markdown",
+        "maxChars": 15000
+      }
+    }
+  ],
+  "stop_reason": "tool_use"
+}
+```
+
+**도구 5: 호텔 상세 (`toolu_03_hotel_detail`)**
+```
+HTTP GET https://www.booking.com/city/ae/dubai.ko.html
+```
+
+반환:
+```json
+{
+  "url": "https://www.booking.com/city/ae/dubai.ko.html",
+  "status": 200,
+  "extractor": "readability",
+  "text": "[EXTERNAL_CONTENT source=web_fetch]\n# 두바이 인기 호텔\n\n## 가성비 TOP\n| 호텔 | 위치 | 1박 가격 | 평점 |\n|------|------|---------|------|\n| 로브 다운타운 | 다운타운 | ₩89,000 | 8.7 |\n| 힐튼 가든인 알미나 | 버즈만 | ₩78,000 | 8.4 |\n| 알바샤 빕 호텔 | 알바샤 | ₩55,000 | 8.1 |\n\n## 럭셔리\n| 호텔 | 위치 | 1박 가격 | 평점 |\n|------|------|---------|------|\n| 아틀란티스 더 팜 | 팜 주메이라 | ₩350,000 | 9.1 |\n| 버즈 알 아랍 | 주메이라 | ₩1,200,000 | 9.5 |\n[/EXTERNAL_CONTENT]",
+  "tookMs": 2103
+}
+```
+
+### Step 7: Round 4 — 파일 생성 (exec + write)
+
+**Messages API 전달 (누적 7개 메시지):**
+```json
+{
+  "messages": [
+    { "role": "user", "content": "두바이 3박5일 여행 계획 짜줘..." },
+    { "role": "assistant", "content": [text + tool_use x2] },
+    { "role": "user", "content": [tool_result x2] },
+    { "role": "assistant", "content": [tool_use x2] },
+    { "role": "user", "content": [tool_result x2] },
+    { "role": "assistant", "content": [tool_use x1] },
+    { "role": "user", "content": [tool_result x1 (호텔 상세)] }
+  ]
+}
+```
+
+**LLM 응답 (Round 4) — exec + write 호출:**
+```json
+{
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "toolu_04_mkdir",
+      "name": "exec",
+      "input": {
+        "command": "mkdir -p ~/travel-plans"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_04_write",
+      "name": "write",
+      "input": {
+        "path": "/Users/user/travel-plans/dubai-2026-03.md",
+        "content": "# 두바이 3박 5일 여행 계획\n\n> 기간: 2026년 3월 15일(일) ~ 3월 19일(목)\n\n## 항공편\n\n| 구간 | 항공사 | 시간 | 가격 |\n|------|--------|------|------|\n| 인천→두바이 | 에티하드항공 | 3/15 22:30→3/16 10:45 (아부다비 경유) | ₩385,000 (왕복) |\n| 두바이→인천 | 에티하드항공 | 3/19 14:00→3/20 05:30 (아부다비 경유) | (왕복 포함) |\n\n## 숙소\n\n**로브 다운타운** (3박)\n- 위치: 다운타운, 버즈칼리파 도보 5분\n- 가격: ₩89,000/박 × 3박 = **₩267,000**\n- 평점: 8.7/10\n\n## 날씨\n\n- 기온: 22~32°C (맑음, 비 거의 없음)\n- 습도: 낮음\n- 준비물: 여름옷, 자외선차단제, 선글라스, 실내 냉방 대비 가디건\n\n## 일정\n\n### Day 1 (3/16 일) - 도착 & 다운타운\n- 10:45 두바이 도착, 호텔 체크인\n- 14:00 두바이 몰 & 수족관\n- 18:00 버즈칼리파 전망대 (At The Top, 사전 예약 필수)\n- 20:00 두바이 분수쇼 감상 + 저녁식사\n\n### Day 2 (3/17 월) - 올드 두바이 & 문화\n- 09:00 아브라(수상택시)로 두바이 크릭 횡단\n- 10:00 골드 수크 & 스파이스 수크\n- 13:00 알파히디 역사지구 점심\n- 15:00 두바이 박물관 (알파히디 요새)\n- 18:00 주메이라 모스크 방문\n- 20:00 마디낫 주메이라 저녁식사\n\n### Day 3 (3/18 화) - 사막 & 마리나\n- 09:00 두바이 마리나 산책 & 브런치\n- 11:00 팜 주메이라 모노레일\n- 13:00 아틀란티스 워터파크 (반나절)\n- 16:00 호텔 휴식\n- 17:00 사막 사파리 투어 (픽업)\n  - 듄 배싱, 낙타 타기, BBQ 디너, 벨리댄스\n- 22:00 호텔 귀환\n\n### Day 4 (3/19 수) - 출발\n- 09:00 체크아웃\n- 10:00 두바이 몰 면세 쇼핑\n- 12:00 공항 이동\n- 14:00 두바이 출발\n\n## 예산 총정리\n\n| 항목 | 비용 |\n|------|------|\n| 항공권 (왕복) | ₩385,000 |\n| 숙소 (3박) | ₩267,000 |\n| 사막 사파리 | ₩80,000 |\n| 버즈칼리파 전망대 | ₩45,000 |\n| 식비 (4일) | ₩200,000 |\n| 교통비 | ₩50,000 |\n| 기타 (입장료 등) | ₩73,000 |\n| **합계** | **₩1,100,000** |\n\n## 예약 링크\n\n- [항공권 - 트립닷컴](https://kr.trip.com/flights/seoul-to-dubai/)\n- [호텔 - Booking.com](https://www.booking.com/city/ae/dubai.ko.html)\n- [사막 사파리 - GetYourGuide](https://www.getyourguide.com/dubai-l173/desert-safari/)\n"
+      }
+    }
+  ],
+  "stop_reason": "tool_use"
+}
+```
+
+**도구 6: exec 실행 결과:**
+```
+(디렉토리 생성됨)
+```
+
+**도구 7: write 실행 결과:**
+```json
+{
+  "path": "/Users/user/travel-plans/dubai-2026-03.md",
+  "bytesWritten": 2847,
+  "created": true
+}
+```
+
+### Step 8: Round 5 — 최종 응답
+
+**Messages API 전달 (누적 9개 메시지):**
+```json
+{
+  "messages": [
+    { "role": "user", "content": "두바이 3박5일 여행 계획 짜줘..." },
+    { "role": "assistant", "content": [text + tool_use x2] },
+    { "role": "user", "content": [tool_result x2] },
+    { "role": "assistant", "content": [tool_use x2] },
+    { "role": "user", "content": [tool_result x2] },
+    { "role": "assistant", "content": [tool_use x1] },
+    { "role": "user", "content": [tool_result x1] },
+    { "role": "assistant", "content": [tool_use x2 (exec + write)] },
+    { "role": "user", "content": [tool_result x2] }
+  ]
+}
+```
+
+**LLM 최종 응답 (Round 5):**
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "두바이 3박 5일 여행 계획을 완성했습니다!\n\n**항공편:** 에티하드항공 왕복 ₩385,000 (아부다비 경유)\n**숙소:** 로브 다운타운 3박 ₩267,000 (버즈칼리파 도보 5분)\n**날씨:** 22~32°C, 맑음 (여름옷 + 자외선차단제)\n\n**일정 요약:**\n- Day 1: 도착 → 두바이 몰 → 버즈칼리파 전망대 → 분수쇼\n- Day 2: 올드 두바이 → 골드수크 → 두바이 박물관 → 마디낫 주메이라\n- Day 3: 마리나 → 팜 주메이라 → 사막 사파리(듄배싱+BBQ)\n- Day 4: 면세 쇼핑 → 출발\n\n**총 예산: 약 ₩1,100,000** (항공+숙소+식비+관광)\n\n상세 일정표를 파일로 저장했습니다:\n📄 `~/travel-plans/dubai-2026-03.md`\n\n일정이나 예산 조정이 필요하면 말씀해주세요!"
+    }
+  ],
+  "stop_reason": "end_turn"
+}
+```
+
+### Step 9: Discord로 응답 전달
+
+**Block Chunker가 텍스트를 Discord 제한(2000자)에 맞게 청킹 후 전송:**
+
+사용자가 Discord에서 보는 메시지들:
+
+> 두바이 3박 5일 여행 계획을 세워드리겠습니다. 항공권, 호텔, 날씨를 먼저 조사하겠습니다.
+
+> 두바이 3박 5일 여행 계획을 완성했습니다!
+>
+> **항공편:** 에티하드항공 왕복 ₩385,000 (아부다비 경유)
+> **숙소:** 로브 다운타운 3박 ₩267,000 (버즈칼리파 도보 5분)
+> **날씨:** 22~32°C, 맑음 (여름옷 + 자외선차단제)
+>
+> **일정 요약:**
+> - Day 1: 도착 → 두바이 몰 → 버즈칼리파 전망대 → 분수쇼
+> - Day 2: 올드 두바이 → 골드수크 → 두바이 박물관
+> - Day 3: 마리나 → 팜 주메이라 → 사막 사파리
+> - Day 4: 면세 쇼핑 → 출발
+>
+> **총 예산: 약 ₩1,100,000**
+>
+> 상세 일정표를 파일로 저장했습니다:
+> `~/travel-plans/dubai-2026-03.md`
+
+### 프롬프트 흐름 요약
+
+```mermaid
+flowchart TD
+    subgraph Input["사용자 입력"]
+        U["두바이 3박5일 여행 계획 짜줘<br/>항공권+호텔+날씨 확인해서 일정표 파일로"]
+    end
+
+    subgraph R1["Round 1"]
+        direction TB
+        R1_IN["[system] 시스템 프롬프트<br/>[user] 복합 요청<br/>[tools] web_search, web_fetch, exec, write, ..."]
+        R1_OUT["[assistant] 텍스트 + tool_use x2<br/>web_search(항공권) + web_search(날씨)"]
+        R1_IN --> R1_OUT
+    end
+
+    subgraph T1["도구 실행 (병렬)"]
+        T1a["Brave API: 항공권 5건"]
+        T1b["Brave API: 날씨 5건"]
+    end
+
+    subgraph R2["Round 2"]
+        R2_IN["[이전 대화] + tool_result x2"]
+        R2_OUT["[assistant] tool_use x2<br/>web_fetch(항공권 상세) + web_search(호텔)"]
+        R2_IN --> R2_OUT
+    end
+
+    subgraph T2["도구 실행 (병렬)"]
+        T2a["HTTP GET + Readability: 항공권"]
+        T2b["Brave API: 호텔 5건"]
+    end
+
+    subgraph R3["Round 3"]
+        R3_IN["[이전 대화] + tool_result x2"]
+        R3_OUT["[assistant] tool_use x1<br/>web_fetch(호텔 상세)"]
+        R3_IN --> R3_OUT
+    end
+
+    subgraph T3["도구 실행"]
+        T3a["HTTP GET + Readability: 호텔"]
+    end
+
+    subgraph R4["Round 4"]
+        R4_IN["[이전 대화] + tool_result x1"]
+        R4_OUT["[assistant] tool_use x2<br/>exec(mkdir) + write(일정표.md)"]
+        R4_IN --> R4_OUT
+    end
+
+    subgraph T4["도구 실행"]
+        T4a["셸: mkdir -p"]
+        T4b["파일 생성: dubai-2026-03.md"]
+    end
+
+    subgraph R5["Round 5"]
+        R5_IN["[이전 대화] + tool_result x2"]
+        R5_OUT["[assistant] 최종 요약 텍스트<br/>stop_reason: end_turn"]
+        R5_IN --> R5_OUT
+    end
+
+    subgraph Output["Discord 전달"]
+        D["Block Chunker → Discord API<br/>사용자에게 최종 응답 + 파일 경로"]
+    end
+
+    U --> R1 --> T1 --> R2 --> T2 --> R3 --> T3 --> R4 --> T4 --> R5 --> Output
+```
+
+### 토큰 사용량 추정
+
+| Round | 입력 토큰 (추정) | 출력 토큰 (추정) | 누적 | 사용 도구 |
+|-------|-----------------|-----------------|------|----------|
+| **Round 1** | ~3,500 (시스템프롬프트 + 유저 + 스키마) | ~120 (텍스트 + tool_use x2) | 3,620 | web_search x2 |
+| **Round 2** | ~5,800 (이전 대화 + tool_result x2) | ~80 (tool_use x2) | 9,500 | web_fetch + web_search |
+| **Round 3** | ~9,200 (이전 대화 + tool_result x2) | ~40 (tool_use x1) | 18,740 | web_fetch |
+| **Round 4** | ~13,500 (이전 대화 + tool_result x1) | ~1,800 (exec + write 대용량) | 34,040 | exec + write |
+| **Round 5** | ~16,000 (이전 대화 + tool_result x2) | ~250 (최종 요약) | **50,290** | (없음) |
+
+> **총 토큰: ~50,000** (단순 검색 대비 ~3배). 복합 요청일수록 대화 누적으로 입력 토큰이 급증.
+> 캐시 활용 시 Round 2~5의 시스템 프롬프트 + 이전 대화 부분이 `cacheReadTokens`로 전환.
+
+### 도구별 실행 시간 추정
+
+```
+Round 1: web_search x2 (병렬)     ~800ms
+Round 2: web_fetch + web_search (병렬) ~1,500ms
+Round 3: web_fetch x1              ~2,100ms
+Round 4: exec + write (병렬)       ~100ms
+LLM 호출 x5 (각 ~2-5초)           ~15,000ms
+─────────────────────────────────────────
+총 예상 소요시간:                  ~20-25초
+```
 
 ---
 
